@@ -4,6 +4,7 @@ import plotly.express as px
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
+import os
 
 # ---------------------------------------------------------------------
 # CARGA DE DATOS
@@ -16,13 +17,30 @@ DIVIPOLA = "data/Divipola_CE_.xlsx"
 
 try:
     df_mortalidad = pd.read_excel(ANEXO1)
-    df_codigos = pd.read_excel(ANEXO2)
+    df_codigos = pd.read_excel(ANEXO2, header=0)
     df_divipola = pd.read_excel(DIVIPOLA)
 except FileNotFoundError as e:
     raise FileNotFoundError(
         f"⚠️ No se encontró uno de los archivos. "
         f"Asegúrate de que los tres estén en la carpeta /data del repositorio. \n{e}"
     )
+
+# ---------------------------------------------------------------------
+# LIMPIEZA DE COLUMNAS EN df_codigos
+# ---------------------------------------------------------------------
+# Quitar espacios, tildes y normalizar nombres de columnas
+df_codigos.columns = df_codigos.columns.str.strip()  # quitar espacios al inicio y fin
+df_codigos.columns = df_codigos.columns.str.replace('\s+', ' ', regex=True)  # múltiples espacios → 1
+df_codigos.columns = df_codigos.columns.str.lower()  # minúsculas
+df_codigos.columns = df_codigos.columns.str.normalize('NFKD')\
+                                     .str.encode('ascii', errors='ignore')\
+                                     .str.decode('utf-8')  # eliminar tildes
+
+# Renombrar columnas para merge
+df_codigos.rename(columns={
+    'codigo de la cie-10 tres caracteres': 'cod_cie3',
+    'descripcion de codigos mortalidad a tres caracteres': 'causa_muerte'
+}, inplace=True)
 
 # ---------------------------------------------------------------------
 # LIMPIEZA Y UNIÓN DE DATOS
@@ -37,13 +55,14 @@ df = df_mortalidad.merge(
 
 # Agregar descripción de causa de muerte
 df = df.merge(
-    df_codigos[["Código de la CIE-10 tres caracteres", "Descripción  de códigos mortalidad a tres caracteres"]],
+    df_codigos[["cod_cie3", "causa_muerte"]],
     left_on="COD_MUERTE",
-    right_on="Código de la CIE-10 tres caracteres",
+    right_on="cod_cie3",
     how="left"
 )
 
-df.rename(columns={"Descripción  de códigos mortalidad a tres caracteres": "CAUSA_MUERTE"}, inplace=True)
+# Renombrar columna final
+df.rename(columns={"causa_muerte": "CAUSA_MUERTE"}, inplace=True)
 
 # ---------------------------------------------------------------------
 # MAPA: Total de muertes por departamento
@@ -170,12 +189,9 @@ app.layout = html.Div([
     dcc.Graph(figure=fig_pie),
 
     html.H2("5️⃣ Principales causas de muerte"),
-    html.Table([
-        html.Tr([html.Th(col) for col in causas_top10.columns])
-    ] + [
-        html.Tr([html.Td(causas_top10.iloc[i][col]) for col in causas_top10.columns])
-        for i in range(len(causas_top10))
-    ]),
+    html.Table([html.Tr([html.Th(col) for col in causas_top10.columns])] +
+               [html.Tr([html.Td(causas_top10.iloc[i][col]) for col in causas_top10.columns])
+                for i in range(len(causas_top10))]),
 
     html.H2("6️⃣ Comparación de muertes por sexo"),
     dcc.Graph(figure=fig_apiladas),
@@ -185,12 +201,8 @@ app.layout = html.Div([
 ])
 
 # ---------------------------------------------------------------------
-# EJECUCIÓN LOCAL
+# EJECUCIÓN LOCAL / RENDER
 # ---------------------------------------------------------------------
-import os
-
 if __name__ == "__main__":
-    # Render asigna el puerto a la variable de entorno PORT
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
-
