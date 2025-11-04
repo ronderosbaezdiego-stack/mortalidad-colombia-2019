@@ -121,6 +121,8 @@ app.layout = html.Div([
 # Despliegue Render
 # --------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))
+    port = int(os.environ.get("PORT", 10000))  # usar el puerto que Render da
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
+
 
