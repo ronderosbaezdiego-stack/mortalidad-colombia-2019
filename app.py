@@ -17,7 +17,7 @@ divipola = divipola.rename(columns=lambda x: x.strip().upper())
 
 # Aseguramos que las columnas claves existen
 if "COD_DEPARTAMENTO" not in df1.columns:
-    raise Exception("⚠️ No se encontró la columna COD_DEPARTAMENTO en el archivo principal.")
+    raise Exception(" No se encontró la columna COD_DEPARTAMENTO en el archivo principal.")
 
 if "COD_DPTO" in divipola.columns:
     divipola["COD_DEPARTAMENTO"] = divipola["COD_DPTO"]
@@ -35,7 +35,7 @@ server = app.server
 # Layout
 # =======================
 app.layout = html.Div([
-    html.H1("📊 Mortalidad Colombia 2019", style={'textAlign': 'center'}),
+    html.H1(" Mortalidad Colombia 2019", style={'textAlign': 'center'}),
 
     html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
@@ -65,7 +65,7 @@ def actualizar(departamento):
     df_filtrado = df1[df1["COD_DEPARTAMENTO"] == int(departamento)]
 
     if df_filtrado.empty:
-        return px.scatter(title="Sin datos para este departamento"), "⚠️ No hay datos disponibles."
+        return px.scatter(title="Sin datos para este departamento"), " No hay datos disponibles."
 
     # Ejemplo de gráfico: muertes por sexo
     fig = px.histogram(
@@ -85,5 +85,6 @@ if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
 
 
