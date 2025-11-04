@@ -6,14 +6,18 @@ from dash import dcc, html
 import os
 
 # ---------------------------------------------------------------------
-# CARGA DE DATOS
+# CARGA DE DATOS OPTIMIZADA
 # ---------------------------------------------------------------------
 ANEXO1 = "data/Anexo1.NoFetal2019_CE_15-03-23.xlsx"
 DIVIPOLA = "data/Divipola_CE_.xlsx"
 
 try:
-    df_mortalidad = pd.read_excel(ANEXO1)
-    df_divipola = pd.read_excel(DIVIPOLA)
+    # Leer solo las columnas necesarias
+    cols_mortalidad = ["COD_DANE", "COD_DEPARTAMENTO", "COD_MUNICIPIO", "MES"]
+    df_mortalidad = pd.read_excel(ANEXO1, usecols=cols_mortalidad)
+
+    cols_divipola = ["COD_DEPARTAMENTO", "DEPARTAMENTO"]
+    df_divipola = pd.read_excel(DIVIPOLA, usecols=cols_divipola)
 except FileNotFoundError as e:
     raise FileNotFoundError(
         f"⚠️ No se encontró uno de los archivos. "
@@ -24,8 +28,8 @@ except FileNotFoundError as e:
 # UNIÓN DE DATOS
 # ---------------------------------------------------------------------
 df = df_mortalidad.merge(
-    df_divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO", "COD_MUNICIPIO", "MUNICIPIO"]],
-    on=["COD_DEPARTAMENTO", "COD_MUNICIPIO"],
+    df_divipola,
+    on="COD_DEPARTAMENTO",
     how="left"
 )
 
@@ -80,3 +84,5 @@ app.layout = html.Div([
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
+
