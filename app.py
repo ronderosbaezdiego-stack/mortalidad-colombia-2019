@@ -1,38 +1,85 @@
-import dash
-from dash import dcc, html, Input, Output
 import pandas as pd
+from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
 
-# Cargar los datos
+# =======================
+# Cargar datos
+# =======================
 df1 = pd.read_excel("data/Anexo1.NoFetal2019_CE_15-03-23.xlsx")
 df2 = pd.read_excel("data/Anexo2.CodigosDeMuerte_CE_15-03-23.xlsx")
-df3 = pd.read_excel("data/Divipola_CE_.xlsx")
+divipola = pd.read_excel("data/Divipola_CE_.xlsx")
 
-app = dash.Dash(__name__)
+# =======================
+# Limpieza básica
+# =======================
+# Normalizamos columnas de nombres de departamento en Divipola
+divipola = divipola.rename(columns=lambda x: x.strip().upper())
+
+# Aseguramos que las columnas claves existen
+if "COD_DEPARTAMENTO" not in df1.columns:
+    raise Exception("⚠️ No se encontró la columna COD_DEPARTAMENTO en el archivo principal.")
+
+if "COD_DPTO" in divipola.columns:
+    divipola["COD_DEPARTAMENTO"] = divipola["COD_DPTO"]
+
+# Eliminamos duplicados de departamentos
+divipola_departamentos = divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO"]].drop_duplicates()
+
+# =======================
+# Crear la app Dash
+# =======================
+app = Dash(__name__)
 server = app.server
 
+# =======================
+# Layout
+# =======================
 app.layout = html.Div([
-    html.H1("Mortalidad Colombia 2019"),
+    html.H1("📊 Mortalidad Colombia 2019", style={'textAlign': 'center'}),
+
+    html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
-        id="departamento",
-        options=[{"label": dep, "value": dep} for dep in sorted(df3["DEPARTAMENTO"].unique())],
-        value=sorted(df3["DEPARTAMENTO"].unique())[0]
+        id='departamento',
+        options=[
+            {'label': dep, 'value': cod}
+            for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"], divipola_departamentos["DEPARTAMENTO"])
+        ],
+        value=int(divipola_departamentos["COD_DEPARTAMENTO"].iloc[0])
     ),
-    dcc.Graph(id="grafico")
+
+    dcc.Graph(id='grafico_mortalidad'),
+
+    html.Div(id='info')
 ])
 
+# =======================
+# Callbacks
+# =======================
 @app.callback(
-    Output("grafico", "figure"),
-    Input("departamento", "value")
+    Output('grafico_mortalidad', 'figure'),
+    Output('info', 'children'),
+    Input('departamento', 'value')
 )
 def actualizar(departamento):
-    df_filtrado = df1[df1["DPTO"] == departamento]
-    fig = px.bar(df_filtrado, x="MUNICIPIO", y="DEFUNCIONES", title=f"Defunciones en {departamento}")
-    return fig
+    # Filtrar datos
+    df_filtrado = df1[df1["COD_DEPARTAMENTO"] == int(departamento)]
 
-import os
+    if df_filtrado.empty:
+        return px.scatter(title="Sin datos para este departamento"), "⚠️ No hay datos disponibles."
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))  # Usa el puerto que Render asigna
-    app.run_server(host="0.0.0.0", port=port, debug=False)
+    # Ejemplo de gráfico: muertes por sexo
+    fig = px.histogram(
+        df_filtrado,
+        x="SEXO",
+        title=f"Distribución de muertes por sexo — Departamento {departamento}",
+        color="SEXO"
+    )
 
+    total = len(df_filtrado)
+    return fig, f"Total de registros en este departamento: {total}"
+
+# =======================
+# Run
+# =======================
+if __name__ == '__main__':
+    app.run_server(host='0.0.0.0', port=10000, debug=False)
