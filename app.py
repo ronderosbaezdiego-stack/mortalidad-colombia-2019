@@ -3,14 +3,11 @@ import pandas as pd
 import plotly.express as px
 import dash
 from dash import dcc, html
-from dash.dependencies import Input, Output
 import os
 
 # ---------------------------------------------------------------------
 # CARGA DE DATOS
 # ---------------------------------------------------------------------
-# Se asume que los tres archivos están en la carpeta /data dentro del repo
-
 ANEXO1 = "data/Anexo1.NoFetal2019_CE_15-03-23.xlsx"
 ANEXO2 = "data/Anexo2.CodigosDeMuerte_CE_15-03-23.xlsx"
 DIVIPOLA = "data/Divipola_CE_.xlsx"
@@ -28,32 +25,27 @@ except FileNotFoundError as e:
 # ---------------------------------------------------------------------
 # LIMPIEZA DE COLUMNAS EN df_codigos
 # ---------------------------------------------------------------------
-# Quitar espacios, tildes y normalizar nombres de columnas
-df_codigos.columns = df_codigos.columns.str.strip()  # quitar espacios al inicio y fin
-df_codigos.columns = df_codigos.columns.str.replace('\s+', ' ', regex=True)  # múltiples espacios → 1
-df_codigos.columns = df_codigos.columns.str.lower()  # minúsculas
+df_codigos.columns = df_codigos.columns.str.strip()
+df_codigos.columns = df_codigos.columns.str.replace('\s+', ' ', regex=True)
+df_codigos.columns = df_codigos.columns.str.lower()
 df_codigos.columns = df_codigos.columns.str.normalize('NFKD')\
                                      .str.encode('ascii', errors='ignore')\
-                                     .str.decode('utf-8')  # eliminar tildes
+                                     .str.decode('utf-8')
 
-# Renombrar columnas para merge
 df_codigos.rename(columns={
     'codigo de la cie-10 tres caracteres': 'cod_cie3',
     'descripcion de codigos mortalidad a tres caracteres': 'causa_muerte'
 }, inplace=True)
 
 # ---------------------------------------------------------------------
-# LIMPIEZA Y UNIÓN DE DATOS
+# UNIÓN DE DATOS
 # ---------------------------------------------------------------------
-
-# Combinar con Divipola para obtener nombres de departamentos y municipios
 df = df_mortalidad.merge(
     df_divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO", "COD_MUNICIPIO", "MUNICIPIO"]],
     on=["COD_DEPARTAMENTO", "COD_MUNICIPIO"],
     how="left"
 )
 
-# Agregar descripción de causa de muerte
 df = df.merge(
     df_codigos[["cod_cie3", "causa_muerte"]],
     left_on="COD_MUERTE",
@@ -61,11 +53,10 @@ df = df.merge(
     how="left"
 )
 
-# Renombrar columna final
 df.rename(columns={"causa_muerte": "CAUSA_MUERTE"}, inplace=True)
 
 # ---------------------------------------------------------------------
-# MAPA: Total de muertes por departamento
+# 1️⃣ MAPA: Total de muertes por departamento
 # ---------------------------------------------------------------------
 mapa_data = df.groupby("DEPARTAMENTO")["COD_DANE"].count().reset_index()
 mapa_data.rename(columns={"COD_DANE": "TOTAL_MUERTES"}, inplace=True)
@@ -81,7 +72,7 @@ mapa = px.choropleth(
 )
 
 # ---------------------------------------------------------------------
-# GRÁFICO DE LÍNEAS: muertes por mes
+# 2️⃣ GRÁFICO DE LÍNEAS: Muertes por mes
 # ---------------------------------------------------------------------
 linea_data = df.groupby("MES")["COD_DANE"].count().reset_index()
 fig_lineas = px.line(
@@ -94,7 +85,7 @@ fig_lineas = px.line(
 )
 
 # ---------------------------------------------------------------------
-# GRÁFICO DE BARRAS: 5 ciudades más violentas (homicidios)
+# 3️⃣ GRÁFICO DE BARRAS: 5 ciudades más violentas (homicidios)
 # ---------------------------------------------------------------------
 homicidios_codigos = ["X95", "X93", "X94"]  # disparo, agresión, no especificado
 violentas = df[df["COD_MUERTE"].isin(homicidios_codigos)]
@@ -114,60 +105,6 @@ fig_barras = px.bar(
 )
 
 # ---------------------------------------------------------------------
-# GRÁFICO CIRCULAR: 10 ciudades con menor mortalidad
-# ---------------------------------------------------------------------
-ciudades_menor = (
-    df.groupby("MUNICIPIO")["COD_DANE"].count()
-    .reset_index()
-    .rename(columns={"COD_DANE": "TOTAL"})
-    .sort_values(by="TOTAL", ascending=True)
-    .head(10)
-)
-fig_pie = px.pie(
-    ciudades_menor,
-    names="MUNICIPIO",
-    values="TOTAL",
-    title="10 ciudades con menor índice de mortalidad (2019)"
-)
-
-# ---------------------------------------------------------------------
-# TABLA: 10 principales causas de muerte
-# ---------------------------------------------------------------------
-causas_top10 = (
-    df.groupby(["COD_MUERTE", "CAUSA_MUERTE"])["COD_DANE"].count()
-    .reset_index()
-    .rename(columns={"COD_DANE": "TOTAL"})
-    .sort_values(by="TOTAL", ascending=False)
-    .head(10)
-)
-
-# ---------------------------------------------------------------------
-# BARRAS APILADAS: muertes por sexo y departamento
-# ---------------------------------------------------------------------
-sexo_dep = (
-    df.groupby(["DEPARTAMENTO", "SEXO"])["COD_DANE"].count()
-    .reset_index()
-    .rename(columns={"COD_DANE": "TOTAL"})
-)
-fig_apiladas = px.bar(
-    sexo_dep,
-    x="DEPARTAMENTO",
-    y="TOTAL",
-    color="SEXO",
-    title="Muertes por sexo y departamento (2019)"
-)
-
-# ---------------------------------------------------------------------
-# HISTOGRAMA: distribución por grupo de edad
-# ---------------------------------------------------------------------
-fig_hist = px.histogram(
-    df,
-    x="GRUPO_EDAD1",
-    title="Distribución de muertes por grupo de edad (2019)",
-    labels={"GRUPO_EDAD1": "Grupo de edad", "count": "Número de muertes"}
-)
-
-# ---------------------------------------------------------------------
 # INTERFAZ DASH
 # ---------------------------------------------------------------------
 app = dash.Dash(__name__)
@@ -184,20 +121,6 @@ app.layout = html.Div([
 
     html.H2("3️⃣ Ciudades más violentas"),
     dcc.Graph(figure=fig_barras),
-
-    html.H2("4️⃣ Ciudades con menor mortalidad"),
-    dcc.Graph(figure=fig_pie),
-
-    html.H2("5️⃣ Principales causas de muerte"),
-    html.Table([html.Tr([html.Th(col) for col in causas_top10.columns])] +
-               [html.Tr([html.Td(causas_top10.iloc[i][col]) for col in causas_top10.columns])
-                for i in range(len(causas_top10))]),
-
-    html.H2("6️⃣ Comparación de muertes por sexo"),
-    dcc.Graph(figure=fig_apiladas),
-
-    html.H2("7️⃣ Distribución de muertes por grupo de edad"),
-    dcc.Graph(figure=fig_hist),
 ])
 
 # ---------------------------------------------------------------------
