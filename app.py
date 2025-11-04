@@ -1,127 +1,111 @@
 import os
 import pandas as pd
 import plotly.express as px
-import dash
-from dash import dcc, html, dash_table
+from dash import Dash, dcc, html
 
-# ============ CARGA DE DATOS ============
-df1 = pd.read_excel("data/Anexo1.NoFetal2019_CE_15-03-23.xlsx")
-cod_muerte = pd.read_excel("data/Anexo2.CodigosDeMuerte_CE_15-03-23.xlsx")
-divipola = pd.read_excel("data/Divipola_CE_.xlsx")
+# ======================================
+# Cargar los datos
+# ======================================
+df = pd.read_csv("data/mortalidad.csv", encoding="utf-8")
 
-# Normalizar nombres de columnas
-df1.columns = df1.columns.str.strip().str.upper()
-cod_muerte.columns = cod_muerte.columns.str.strip().str.upper()
-divipola.columns = divipola.columns.str.strip().str.upper()
+# Limpiar nombres de columnas
+df.columns = df.columns.str.strip().str.upper()
 
-# Convertir códigos a texto
-divipola["COD_DEPARTAMENTO"] = divipola["COD_DEPARTAMENTO"].astype(str).str.zfill(2)
-df1["COD_DEPARTAMENTO"] = df1["COD_DEPARTAMENTO"].astype(str).str.zfill(2)
+# Asegurar que existan columnas necesarias
+if "COD_DEPARTAMENTO" not in df.columns and "COD_DANE" in df.columns:
+    df["COD_DEPARTAMENTO"] = df["COD_DANE"].astype(str).str[:2]
 
-# Unir nombre del departamento
-if "NOMBRE_DEPARTAMENTO" in divipola.columns:
-    df1 = df1.merge(divipola[["COD_DEPARTAMENTO", "NOMBRE_DEPARTAMENTO"]], on="COD_DEPARTAMENTO", how="left")
-else:
-    df1["NOMBRE_DEPARTAMENTO"] = df1["COD_DEPARTAMENTO"]
+df["COD_DEPARTAMENTO"] = df["COD_DEPARTAMENTO"].astype(str).str.zfill(2)
+df["COD_MUNICIPIO"] = df["COD_MUNICIPIO"].astype(str).str.zfill(5)
+df["SEXO"] = df["SEXO"].fillna("No especificado")
 
-# ============ PROCESAMIENTO DE DATOS ============
-muertes_depto = df1.groupby("NOMBRE_DEPARTAMENTO")["COD_DEPARTAMENTO"].count().reset_index(name="TOTAL_MUERTES")
-muertes_mes = df1.groupby("MES")["COD_DEPARTAMENTO"].count().reset_index(name="TOTAL_MUERTES")
+# ======================================
+# Crear la aplicación Dash
+# ======================================
+app = Dash(__name__)
+server = app.server
 
-violentas = df1[df1["COD_MUERTE"].astype(str).str.startswith("X95")]
-top_5_ciudades_violentas = (
-    violentas.groupby("COD_MUNICIPIO")["COD_MUERTE"].count().nlargest(5).reset_index(name="TOTAL_HOMICIDIOS")
+# ======================================
+# Crear las gráficas
+# ======================================
+
+# 1️⃣ Mapa: muertes por departamento
+muertes_dep = df.groupby("COD_DEPARTAMENTO").size().reset_index(name="Total")
+fig_mapa = px.choropleth(
+    muertes_dep,
+    locations="COD_DEPARTAMENTO",
+    color="Total",
+    color_continuous_scale="Reds",
+    title="Muertes por departamento"
 )
 
-bajas_muertes = (
-    df1.groupby("COD_MUNICIPIO")["COD_MUERTE"].count().nsmallest(10).reset_index(name="TOTAL_MUERTES")
+# 2️⃣ Gráfico de líneas: muertes por mes
+fig_lineas = px.line(
+    df.groupby("MES").size().reset_index(name="Total"),
+    x="MES", y="Total",
+    title="Muertes por mes"
 )
 
-top_causas = (
-    df1.groupby("COD_MUERTE")["COD_DEPARTAMENTO"].count().reset_index(name="TOTAL")
-    .merge(cod_muerte, on="COD_MUERTE", how="left")
-    .sort_values(by="TOTAL", ascending=False)
-    .head(10)
-)
+# 3️⃣ Barras: 5 ciudades más violentas
+homicidios = df[df["COD_MUERTE"].astype(str).str.startswith("X95")]
+top_violentas = homicidios.groupby("COD_MUNICIPIO").size().nlargest(5).reset_index(name="Total")
+fig_violentas = px.bar(top_violentas, x="COD_MUNICIPIO", y="Total", title="Top 5 ciudades más violentas")
 
-sexo_depto = (
-    df1.groupby(["NOMBRE_DEPARTAMENTO", "SEXO"])["COD_DEPARTAMENTO"].count().reset_index(name="TOTAL")
-)
+# 4️⃣ Circular: 10 ciudades con menor mortalidad
+menor_mortalidad = df.groupby("COD_MUNICIPIO").size().nsmallest(10).reset_index(name="Total")
+fig_menor = px.pie(menor_mortalidad, names="COD_MUNICIPIO", values="Total", title="10 ciudades con menor mortalidad")
 
-df1["GRUPO_EDAD1"] = df1["GRUPO_EDAD1"].astype(str)
+# 5️⃣ Tabla: 10 principales causas de muerte
+top_causas = df.groupby("COD_MUERTE").size().reset_index(name="Total").sort_values("Total", ascending=False).head(10)
 
-# ============ DASH APP ============
-app = dash.Dash(__name__)
-server = app.server  # Render busca esta variable
+# 6️⃣ Barras apiladas: muertes por sexo y departamento
+barras = df.groupby(["COD_DEPARTAMENTO", "SEXO"]).size().reset_index(name="Total")
+fig_barras = px.bar(barras, x="COD_DEPARTAMENTO", y="Total", color="SEXO", title="Muertes por sexo y departamento")
 
+# 7️⃣ Histograma: distribución por grupo de edad
+fig_hist = px.histogram(df, x="GRUPO_EDAD1", title="Distribución de muertes por grupo de edad")
+
+# ======================================
+# Layout (estructura visual)
+# ======================================
 app.layout = html.Div([
     html.H1("Mortalidad en Colombia 2019", style={"textAlign": "center"}),
 
     html.H3("Mapa: Total de muertes por departamento"),
-    dcc.Graph(
-        id="mapa",
-        figure=px.choropleth(
-            muertes_depto,
-            geojson="https://raw.githubusercontent.com/juan-garcia-01/Colombia-GeoJSON/main/colombia.json",
-            featureidkey="properties.NOMBRE_DPT",
-            locations="NOMBRE_DEPARTAMENTO",
-            color="TOTAL_MUERTES",
-            color_continuous_scale="Reds",
-            title="Distribución total de muertes por departamento"
-        )
-    ),
+    dcc.Graph(figure=fig_mapa),
 
-    html.H3("Gráfico de líneas: Total de muertes por mes"),
-    dcc.Graph(
-        id="lineas",
-        figure=px.line(muertes_mes, x="MES", y="TOTAL_MUERTES", markers=True,
-                       title="Muertes mensuales en Colombia 2019")
-    ),
+    html.H3("Gráfico de líneas: Muertes por mes"),
+    dcc.Graph(figure=fig_lineas),
 
-    html.H3("Gráfico de barras: 5 ciudades más violentas (X95)"),
-    dcc.Graph(
-        id="barras_violentas",
-        figure=px.bar(top_5_ciudades_violentas, x="COD_MUNICIPIO", y="TOTAL_HOMICIDIOS",
-                      title="5 ciudades más violentas (Homicidios por arma de fuego)",
-                      color="TOTAL_HOMICIDIOS", text_auto=True)
-    ),
+    html.H3("Gráfico de barras: Top 5 ciudades más violentas"),
+    dcc.Graph(figure=fig_violentas),
 
-    html.H3("Gráfico circular: 10 ciudades con menor índice de mortalidad"),
-    dcc.Graph(
-        id="pie_bajo",
-        figure=px.pie(bajas_muertes, values="TOTAL_MUERTES", names="COD_MUNICIPIO",
-                      title="10 ciudades con menor índice de mortalidad")
-    ),
+    html.H3("Gráfico circular: 10 ciudades con menor mortalidad"),
+    dcc.Graph(figure=fig_menor),
 
-    html.H3("Tabla: 10 principales causas de muerte en Colombia"),
-    dash_table.DataTable(
-        id="tabla_causas",
-        columns=[{"name": i, "id": i} for i in top_causas.columns],
-        data=top_causas.to_dict("records"),
-        style_table={"overflowX": "auto"},
-        style_cell={"textAlign": "center"},
-        page_size=10
-    ),
+    html.H3("Tabla: 10 principales causas de muerte"),
+    html.Table([
+        html.Thead(html.Tr([html.Th(col) for col in top_causas.columns])),
+        html.Tbody([
+            html.Tr([html.Td(top_causas.iloc[i][col]) for col in top_causas.columns])
+            for i in range(len(top_causas))
+        ])
+    ], style={"margin": "auto"}),
 
     html.H3("Gráfico de barras apiladas: Muertes por sexo y departamento"),
-    dcc.Graph(
-        id="barras_sexo",
-        figure=px.bar(sexo_depto, x="NOMBRE_DEPARTAMENTO", y="TOTAL", color="SEXO",
-                      title="Total de muertes por sexo en cada departamento",
-                      barmode="stack")
-    ),
+    dcc.Graph(figure=fig_barras),
 
     html.H3("Histograma: Distribución de muertes por grupo de edad"),
-    dcc.Graph(
-        id="histograma",
-        figure=px.histogram(df1, x="GRUPO_EDAD1", title="Distribución de muertes por grupo de edad")
-    ),
+    dcc.Graph(figure=fig_hist)
 ])
 
-# ============ PUERTO PARA RENDER ============
+# ======================================
+# Ejecutar aplicación
+# ======================================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))  # Render asigna automáticamente el puerto
+    port = int(os.environ.get("PORT", 8080))  # Compatible con Render
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
 
 
 
