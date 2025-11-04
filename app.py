@@ -30,5 +30,9 @@ def actualizar(departamento):
     fig = px.bar(df_filtrado, x="MUNICIPIO", y="DEFUNCIONES", title=f"Defunciones en {departamento}")
     return fig
 
+import os
+
 if __name__ == "__main__":
-    app.run_server(host="0.0.0.0", port=8080, debug=True)
+    port = int(os.environ.get("PORT", 8050))  # Usa el puerto que Render asigna
+    app.run_server(host="0.0.0.0", port=port, debug=False)
+
