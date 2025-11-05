@@ -35,6 +35,21 @@ totales_departamento = totales_departamento.merge(
 totales_nacional = df1.shape[0]
 
 # =======================
+# Nuevo gráfico: Top 10 causas de mortalidad (CIE-10)
+# =======================
+# Nos aseguramos de que las columnas existan
+if "COD_CIE10_4" not in df1.columns:
+    df1["COD_CIE10_4"] = df1.get("COD_CIE_10_4", None)
+
+if "CAUSA" not in df1.columns:
+    # intenta usar una posible columna de descripción de causa
+    df1["CAUSA"] = df1.get("DESCRIPCION_CIE10", "Desconocida")
+
+# Agrupamos las causas
+totales_causa = df1.groupby(["COD_CIE10_4", "CAUSA"]).size().reset_index(name="TOTAL")
+top_causas = totales_causa.sort_values(by="TOTAL", ascending=False).head(10)
+
+# =======================
 # Crear la app Dash
 # =======================
 app = Dash(__name__)
@@ -70,6 +85,20 @@ app.layout = html.Div([
             labels={"COD_DANE": "Total de muertes"}
         )
     ),
+
+    # === Nuevo gráfico añadido ===
+    html.H2("⚰️ Top 10 causas de muerte en Colombia (CIE-10)"),
+    dcc.Graph(
+        figure=px.bar(
+            top_causas,
+            x="CAUSA",
+            y="TOTAL",
+            text="TOTAL",
+            title="Principales causas de mortalidad — Colombia 2019",
+            labels={"CAUSA": "Causa de muerte", "TOTAL": "Número de muertes"}
+        ).update_layout(xaxis_tickangle=-45)
+    ),
+    # =============================
 
     html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
