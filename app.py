@@ -1,5 +1,5 @@
 import pandas as pd
-from dash import Dash, dcc, html, Input, Output, dash_table
+from dash import Dash, dcc, html, Input, Output
 import plotly.express as px
 import os
 
@@ -14,11 +14,6 @@ divipola = pd.read_excel("data/Divipola_CE_.xlsx")
 # =======================
 divipola = divipola.rename(columns=lambda x: x.strip().upper())
 
-# Revisar nombres de columnas
-print("Columnas df1:", df1.columns)
-print("Columnas divipola:", divipola.columns)
-
-# Ajuste de columnas para merge
 if "COD_DEPARTAMENTO" not in df1.columns:
     raise Exception("No se encontró la columna COD_DEPARTAMENTO en el archivo principal.")
 
@@ -29,7 +24,7 @@ divipola_departamentos = divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO"]].drop_dup
 divipola_municipios = divipola[["COD_MUNICIPIO", "MUNICIPIO"]].drop_duplicates()
 
 # =======================
-# Totales nacionales y por departamento
+# Preprocesar totales nacionales
 # =======================
 totales_departamento = df1.groupby("COD_DEPARTAMENTO")["COD_DANE"].count().reset_index()
 totales_departamento = totales_departamento.merge(
@@ -38,18 +33,6 @@ totales_departamento = totales_departamento.merge(
     how="left"
 )
 totales_nacional = df1.shape[0]
-
-# =======================
-# Gráficos adicionales (CIE10)
-# =======================
-# Verificar que estas columnas existan en df1, si no, cambiar al nombre correcto
-if "COD_CIE10_4" not in df1.columns:
-    df1["COD_CIE10_4"] = df1.get("COD_CIE_10_4", None)
-if "CAUSA" not in df1.columns:
-    df1["CAUSA"] = df1.get("DESCRIPCION_CIE10", None)
-
-totales_causa = df1.groupby(["COD_CIE10_4", "CAUSA"]).size().reset_index(name="TOTAL")
-top_causas = totales_causa.sort_values(by="TOTAL", ascending=False).head(10)
 
 # =======================
 # Crear la app Dash
@@ -91,21 +74,16 @@ app.layout = html.Div([
     html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
         id='departamento',
-        options=[{'label': dep, 'value': cod} for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"], divipola_departamentos["DEPARTAMENTO"])],
+        options=[
+            {'label': dep, 'value': cod}
+            for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"], divipola_departamentos["DEPARTAMENTO"])
+        ],
         value=int(divipola_departamentos["COD_DEPARTAMENTO"].iloc[0])
     ),
 
     dcc.Graph(id='grafico_sexo'),
     dcc.Graph(id='grafico_municipios'),
     dcc.Graph(id='grafico_menor'),
-    html.H2("Top 10 causas de mortalidad"),
-    dash_table.DataTable(
-        id="tabla_causas",
-        columns=[{"name": i, "id": i} for i in top_causas.columns],
-        data=top_causas.to_dict('records'),
-        style_table={'overflowX': 'auto'},
-        style_cell={'textAlign': 'left'}
-    ),
 
     html.Div(id='info')
 ])
