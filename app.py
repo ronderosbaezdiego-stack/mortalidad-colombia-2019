@@ -14,6 +14,11 @@ divipola = pd.read_excel("data/Divipola_CE_.xlsx")
 # =======================
 divipola = divipola.rename(columns=lambda x: x.strip().upper())
 
+# Revisar nombres de columnas
+print("Columnas df1:", df1.columns)
+print("Columnas divipola:", divipola.columns)
+
+# Ajuste de columnas para merge
 if "COD_DEPARTAMENTO" not in df1.columns:
     raise Exception("No se encontró la columna COD_DEPARTAMENTO en el archivo principal.")
 
@@ -24,7 +29,7 @@ divipola_departamentos = divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO"]].drop_dup
 divipola_municipios = divipola[["COD_MUNICIPIO", "MUNICIPIO"]].drop_duplicates()
 
 # =======================
-# Preprocesar totales nacionales
+# Totales nacionales y por departamento
 # =======================
 totales_departamento = df1.groupby("COD_DEPARTAMENTO")["COD_DANE"].count().reset_index()
 totales_departamento = totales_departamento.merge(
@@ -35,17 +40,26 @@ totales_departamento = totales_departamento.merge(
 totales_nacional = df1.shape[0]
 
 # =======================
-# Preprocesar principales causas de muerte
+# Gráficos adicionales (CIE10)
 # =======================
+# Verificar que estas columnas existan en df1, si no, cambiar al nombre correcto
+if "COD_CIE10_4" not in df1.columns:
+    df1["COD_CIE10_4"] = df1.get("COD_CIE_10_4", None)
+if "CAUSA" not in df1.columns:
+    df1["CAUSA"] = df1.get("DESCRIPCION_CIE10", None)
+
 totales_causa = df1.groupby(["COD_CIE10_4", "CAUSA"]).size().reset_index(name="TOTAL")
-totales_causa = totales_causa.sort_values(by="TOTAL", ascending=False).head(10)
+top_causas = totales_causa.sort_values(by="TOTAL", ascending=False).head(10)
 
 # =======================
-# Layout de la app
+# Crear la app Dash
 # =======================
 app = Dash(__name__)
 server = app.server
 
+# =======================
+# Layout
+# =======================
 app.layout = html.Div([
     html.H1("Mortalidad Colombia 2019", style={'textAlign': 'center'}),
 
@@ -77,19 +91,18 @@ app.layout = html.Div([
     html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
         id='departamento',
-        options=[{'label': dep, 'value': cod}
-                 for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"],
-                                     divipola_departamentos["DEPARTAMENTO"])],
+        options=[{'label': dep, 'value': cod} for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"], divipola_departamentos["DEPARTAMENTO"])],
         value=int(divipola_departamentos["COD_DEPARTAMENTO"].iloc[0])
     ),
 
     dcc.Graph(id='grafico_sexo'),
     dcc.Graph(id='grafico_municipios'),
     dcc.Graph(id='grafico_menor'),
+    html.H2("Top 10 causas de mortalidad"),
     dash_table.DataTable(
-        id='tabla_causas',
-        columns=[{"name": i, "id": i} for i in totales_causa.columns],
-        data=totales_causa.to_dict('records'),
+        id="tabla_causas",
+        columns=[{"name": i, "id": i} for i in top_causas.columns],
+        data=top_causas.to_dict('records'),
         style_table={'overflowX': 'auto'},
         style_cell={'textAlign': 'left'}
     ),
@@ -104,7 +117,6 @@ app.layout = html.Div([
     Output('grafico_sexo', 'figure'),
     Output('grafico_municipios', 'figure'),
     Output('grafico_menor', 'figure'),
-    Output('tabla_causas', 'data'),
     Output('info', 'children'),
     Input('departamento', 'value')
 )
@@ -113,7 +125,7 @@ def actualizar(departamento):
 
     if df_filtrado.empty:
         empty_fig = px.scatter(title="Sin datos para este departamento")
-        return empty_fig, empty_fig, empty_fig, [], "No hay datos disponibles."
+        return empty_fig, empty_fig, empty_fig, "No hay datos disponibles."
 
     # Gráfico 1: Muertes por sexo
     fig_sexo = px.histogram(
@@ -146,11 +158,8 @@ def actualizar(departamento):
         title=f"10 municipios con menor mortalidad — Departamento {departamento}"
     )
 
-    # Actualizar tabla de causas de muerte
-    tabla_data = totales_causa.to_dict('records')
-
     total_dep = len(df_filtrado)
-    return fig_sexo, fig_mun, fig_menor, tabla_data, f"Total de registros en este departamento: {total_dep} | Total nacional: {totales_nacional}"
+    return fig_sexo, fig_mun, fig_menor, f"Total de registros en este departamento: {total_dep} | Total nacional: {totales_nacional}"
 
 # =======================
 # Run
@@ -158,6 +167,3 @@ def actualizar(departamento):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
-
-
-
