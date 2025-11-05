@@ -21,7 +21,7 @@ if "COD_DPTO" in divipola.columns:
     divipola["COD_DEPARTAMENTO"] = divipola["COD_DPTO"]
 
 divipola_departamentos = divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO"]].drop_duplicates()
-divipola_municipios = divipola[["COD_DEPARTAMENTO", "COD_MUNICIPIO", "MUNICIPIO"]].drop_duplicates()
+divipola_municipios = divipola[["COD_MUNICIPIO", "MUNICIPIO"]].drop_duplicates()
 
 # =======================
 # Preprocesar totales nacionales
@@ -46,7 +46,7 @@ server = app.server
 app.layout = html.Div([
     html.H1("Mortalidad Colombia 2019", style={'textAlign': 'center'}),
 
-    html.H2("Mapa de mortalidad por departamento"),
+    html.H2("📍 Mapa de mortalidad por departamento"),
     dcc.Graph(
         figure=px.choropleth(
             totales_departamento,
@@ -116,7 +116,7 @@ def actualizar(departamento):
     # Gráfico 2: Top 5 municipios con más muertes
     df_mun = df_filtrado.groupby("COD_MUNICIPIO")["COD_DANE"].count().reset_index()
     df_mun = df_mun.sort_values(by="COD_DANE", ascending=False).head(5)
-    df_mun = df_mun.merge(divipola_municipios, on=["COD_DEPARTAMENTO", "COD_MUNICIPIO"], how="left")
+    df_mun = df_mun.merge(divipola_municipios, on="COD_MUNICIPIO", how="left")
     fig_mun = px.bar(
         df_mun,
         x="MUNICIPIO",
@@ -125,9 +125,9 @@ def actualizar(departamento):
         labels={"COD_DANE": "Total de muertes", "MUNICIPIO": "Municipio"}
     )
 
-    # Gráfico 3: Top 10 municipios con menor mortalidad (gráfico circular)
+    # Gráfico 3: Top 10 municipios con menor mortalidad
     df_menor = df_filtrado.groupby("COD_MUNICIPIO")["COD_DANE"].count().reset_index()
-    df_menor = df_menor.merge(divipola_municipios, on=["COD_DEPARTAMENTO", "COD_MUNICIPIO"], how="left")
+    df_menor = df_menor.merge(divipola_municipios, on="COD_MUNICIPIO", how="left")
     df_menor = df_menor.sort_values(by="COD_DANE", ascending=True).head(10)
     fig_menor = px.pie(
         df_menor,
@@ -145,3 +145,5 @@ def actualizar(departamento):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
+
