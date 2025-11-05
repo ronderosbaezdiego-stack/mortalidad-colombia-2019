@@ -46,7 +46,7 @@ server = app.server
 app.layout = html.Div([
     html.H1("Mortalidad Colombia 2019", style={'textAlign': 'center'}),
 
-    html.H2("Mapa de mortalidad por departamento"),
+    html.H2(" Mapa de mortalidad por departamento"),
     dcc.Graph(
         figure=px.choropleth(
             totales_departamento,
@@ -59,7 +59,7 @@ app.layout = html.Div([
         )
     ),
 
-    html.H2("Muertes por mes en Colombia"),
+    html.H2(" Muertes por mes en Colombia"),
     dcc.Graph(
         figure=px.line(
             df1.groupby("MES")["COD_DANE"].count().reset_index(),
@@ -145,6 +145,4 @@ def actualizar(departamento):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
-
-
 
