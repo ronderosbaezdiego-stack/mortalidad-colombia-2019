@@ -1,7 +1,6 @@
 import pandas as pd
-from dash import Dash, dcc, html, Input, Output
+from dash import Dash, dcc, html, Input, Output, dash_table
 import plotly.express as px
-import dash_table
 import os
 
 # =======================
@@ -25,11 +24,6 @@ divipola_departamentos = divipola[["COD_DEPARTAMENTO", "DEPARTAMENTO"]].drop_dup
 divipola_municipios = divipola[["COD_MUNICIPIO", "MUNICIPIO"]].drop_duplicates()
 
 # =======================
-# Merge para agregar nombre del departamento a df1
-# =======================
-df1 = df1.merge(divipola_departamentos, on="COD_DEPARTAMENTO", how="left")
-
-# =======================
 # Preprocesar totales nacionales
 # =======================
 totales_departamento = df1.groupby("COD_DEPARTAMENTO")["COD_DANE"].count().reset_index()
@@ -41,18 +35,21 @@ totales_departamento = totales_departamento.merge(
 totales_nacional = df1.shape[0]
 
 # =======================
-# Crear la app Dash
+# Preprocesar principales causas de muerte
+# =======================
+totales_causa = df1.groupby(["COD_CIE10_4", "CAUSA"]).size().reset_index(name="TOTAL")
+totales_causa = totales_causa.sort_values(by="TOTAL", ascending=False).head(10)
+
+# =======================
+# Layout de la app
 # =======================
 app = Dash(__name__)
 server = app.server
 
-# =======================
-# Layout
-# =======================
 app.layout = html.Div([
     html.H1("Mortalidad Colombia 2019", style={'textAlign': 'center'}),
 
-    html.H2("Mapa de mortalidad por departamento"),
+    html.H2("📍 Mapa de mortalidad por departamento"),
     dcc.Graph(
         figure=px.choropleth(
             totales_departamento,
@@ -65,7 +62,7 @@ app.layout = html.Div([
         )
     ),
 
-    html.H2("Muertes por mes en Colombia"),
+    html.H2("📊 Muertes por mes en Colombia"),
     dcc.Graph(
         figure=px.line(
             df1.groupby("MES")["COD_DANE"].count().reset_index(),
@@ -80,19 +77,22 @@ app.layout = html.Div([
     html.Label("Selecciona un departamento:"),
     dcc.Dropdown(
         id='departamento',
-        options=[
-            {'label': dep, 'value': cod}
-            for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"], divipola_departamentos["DEPARTAMENTO"])
-        ],
+        options=[{'label': dep, 'value': cod}
+                 for cod, dep in zip(divipola_departamentos["COD_DEPARTAMENTO"],
+                                     divipola_departamentos["DEPARTAMENTO"])],
         value=int(divipola_departamentos["COD_DEPARTAMENTO"].iloc[0])
     ),
 
     dcc.Graph(id='grafico_sexo'),
     dcc.Graph(id='grafico_municipios'),
     dcc.Graph(id='grafico_menor'),
-    dcc.Graph(id='grafico_apilado_sexo'),
-    dcc.Graph(id='grafico_histograma_edad'),
-    dash_table.DataTable(id='tabla_causas'),
+    dash_table.DataTable(
+        id='tabla_causas',
+        columns=[{"name": i, "id": i} for i in totales_causa.columns],
+        data=totales_causa.to_dict('records'),
+        style_table={'overflowX': 'auto'},
+        style_cell={'textAlign': 'left'}
+    ),
 
     html.Div(id='info')
 ])
@@ -104,10 +104,7 @@ app.layout = html.Div([
     Output('grafico_sexo', 'figure'),
     Output('grafico_municipios', 'figure'),
     Output('grafico_menor', 'figure'),
-    Output('grafico_apilado_sexo', 'figure'),
-    Output('grafico_histograma_edad', 'figure'),
     Output('tabla_causas', 'data'),
-    Output('tabla_causas', 'columns'),
     Output('info', 'children'),
     Input('departamento', 'value')
 )
@@ -116,7 +113,7 @@ def actualizar(departamento):
 
     if df_filtrado.empty:
         empty_fig = px.scatter(title="Sin datos para este departamento")
-        return empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, [], [], "No hay datos disponibles."
+        return empty_fig, empty_fig, empty_fig, [], "No hay datos disponibles."
 
     # Gráfico 1: Muertes por sexo
     fig_sexo = px.histogram(
@@ -149,38 +146,11 @@ def actualizar(departamento):
         title=f"10 municipios con menor mortalidad — Departamento {departamento}"
     )
 
-    # Gráfico 4: Barras apiladas por sexo en cada departamento
-    df_apilado = df1.groupby(["DEPARTAMENTO", "SEXO"])["COD_DANE"].count().reset_index()
-    fig_apilado = px.bar(
-        df_apilado,
-        x="DEPARTAMENTO",
-        y="COD_DANE",
-        color="SEXO",
-        title="Comparación de muertes por sexo en cada departamento"
-    )
-
-    # Gráfico 5: Histograma por grupo de edad
-    if "GRUPO_EDAD1" in df_filtrado.columns:
-        fig_hist = px.histogram(
-            df_filtrado,
-            x="GRUPO_EDAD1",
-            nbins=len(df_filtrado["GRUPO_EDAD1"].unique()),
-            title=f"Distribución de muertes por grupo de edad — Departamento {departamento}",
-            labels={"GRUPO_EDAD1": "Grupo de edad", "COD_DANE": "Cantidad de muertes"}
-        )
-    else:
-        fig_hist = px.scatter(title="No hay columna GRUPO_EDAD1 para este departamento")
-
-    # Tabla 6: 10 principales causas de muerte
-    df_causas = df_filtrado.groupby(["CIE10_3_CARACTERES", "DESCRIPCION"]).size().reset_index(name="Total")
-    df_causas = df_causas.sort_values(by="Total", ascending=False).head(10)
-    tabla_data = df_causas.to_dict('records')
-    tabla_columns = [{"name": i, "id": i} for i in df_causas.columns]
+    # Actualizar tabla de causas de muerte
+    tabla_data = totales_causa.to_dict('records')
 
     total_dep = len(df_filtrado)
-    info_text = f"Total de registros en este departamento: {total_dep} | Total nacional: {totales_nacional}"
-
-    return fig_sexo, fig_mun, fig_menor, fig_apilado, fig_hist, tabla_data, tabla_columns, info_text
+    return fig_sexo, fig_mun, fig_menor, tabla_data, f"Total de registros en este departamento: {total_dep} | Total nacional: {totales_nacional}"
 
 # =======================
 # Run
@@ -188,5 +158,6 @@ def actualizar(departamento):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8050))
     app.run_server(host="0.0.0.0", port=port, debug=False)
+
 
 
